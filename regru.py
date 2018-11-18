@@ -95,7 +95,7 @@ total = len(domains)
 processed = 0
 
 print('==================================')
-print('REG.RU Scrap domains test task\n{} domains to process\n'.format(len(domains)))
+print('REG.RU Scrap domains test task\n{} domains to process'.format(len(domains)))
 print('==================================\n\n')
 
 # Готовим файл с результатами, будем добавлять в него записи по мере обработки
