@@ -11,12 +11,15 @@ title, meta:description, meta:keywords, записывает получивши�
 Сайты с битыми кодировками не обрабатываются.
 
 """
+import re
+
 import aiohttp
 import asyncio
 
 import os
 import ssl
-from html.parser import HTMLParser
+# from html.parser import HTMLParser
+from bs4 import BeautifulSoup
 
 # ===========================================
 # Конфигурация
@@ -36,46 +39,25 @@ MAX_CONNECTIONS = 100
 
 # ===========================================
 # html parser
-# Можно сделать более аккуратно, например ожидать title внутри head и т.п.
-# или использовать Beautiful Soup, зависит от задачи.
 
+def get(d, key, default=None): return d.get(key, default) if d else default
 
-class Parser(HTMLParser):
+def parse(doc):
+    """Парсит скачанный html
+    Парсит скачанный html, возвращает clear text, где первые три строчки это
+    title, meta:keywords, meta:description
+    """
 
-    def __init__(self):
-        super().__init__()
-        self.reset()
-        self.data = []
-        self.title = ''
-        self.keywords = ''
-        self.description = ''
-        self.state = {}
+    bs = BeautifulSoup(doc, "lxml")
+    title = getattr(bs.find('title'), 'string', '')
+    keywords = get(bs.find('meta', attrs={'name':'keywords'}), 'content', '')
+    description = get(bs.find('meta', attrs={'name':'description'}), 'content', '')
 
-    def error(self, message):
-        self.data.append('Error {}'.format(message))
+    for s in bs('script'): s.extract()
+    for s in bs('style'): s.extract()
+    text = re.sub(r'\n+', '\n', getattr(bs.body, 'text', '').strip())
 
-    def handle_starttag(self, tag, attrs):
-        # print(tag,attrs)
-        if tag == 'title':
-            self.state['title'] = 1
-        elif tag == 'meta':
-            dattrs = {k: v for k, v in attrs}
-            try:
-                if dattrs['name'] == 'keywords':
-                    self.keywords = dattrs['content']
-                elif dattrs['name'] == 'description':
-                    self.description = dattrs['content']
-            except KeyError:
-                pass
-
-    def handle_data(self, data):
-        if 'title' in self.state:
-            self.title = data
-            del self.state['title']
-        self.data.append(data)
-
-    def get_result(self):
-        return '{}\n{}\n{}\n{}'.format(self.title, self.description, self.keywords, ''.join(self.data))
+    return "{}\n{}\n{}\n{}".format(title, keywords, description, text)
 
 
 # ===========================================
@@ -88,8 +70,8 @@ class Parser(HTMLParser):
 with open(DOMAIN_LIST) as f:
     domains = [s.rstrip().split(',')[1] for s in f][1:]
 
-# domains = domains[:500]
-# domains = ['кто.рф']
+domains = domains[200:500]
+# domains = ['1nt-c.ru']
 
 total = len(domains)
 processed = 0
@@ -125,15 +107,14 @@ async def fetch(session, domain):
                 log('Connected, STATUS: {}'.format(status))
 
                 if status == 200:
-                    doc = await response.text()
-                    parser = Parser()
-                    parser.feed(doc)
-                    data = parser.get_result()
+                    raw = await response.read()
+
+                    data = parse(raw.decode(response.charset or 'utf-8', 'ignore') if raw else '')
 
                     fn = os.path.join(DOWNLOAD_DIR, '{}.txt'.format(domain))
                     try:
-                        with open(fn, 'wb') as f:
-                            f.write(data.encode('utf-8'))
+                        with open(fn, 'wt', encoding='utf-8') as f:
+                            f.write(data)
                             flag = 1
                     except IOError:
                         print("{}: Can't write file {}".format(url, fn))
@@ -142,7 +123,7 @@ async def fetch(session, domain):
             log('Not connected, ERROR: {}'.format(e))
 
         except UnicodeError as e:
-            log("Bad charset, ERROR: {}".format(e))
+            log("UnicodeError, ERROR: {}".format(e))
 
         with open(OUTPUT_FILENAME, 'ab') as f:
             f.write('{},{},{}\n'.format(
@@ -155,7 +136,7 @@ async def fetch(session, domain):
         processed += 1
 
         if processed == total or processed % 50 == 1:
-            print('========== Progress: {} of {} domains processed'.format(processed, total))
+            print('============================= Progress: {} of {} domains processed'.format(processed, total))
 
 
 async def main():
