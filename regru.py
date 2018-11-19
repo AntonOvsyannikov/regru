@@ -70,7 +70,7 @@ def parse(doc):
 with open(DOMAIN_LIST) as f:
     domains = [s.rstrip().split(',')[1] for s in f][1:]
 
-domains = domains[200:500]
+# domains = domains[200:500]
 # domains = ['1nt-c.ru']
 
 total = len(domains)
